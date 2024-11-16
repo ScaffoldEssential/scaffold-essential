@@ -7,10 +7,10 @@
     "dev": "cd frontend && npm run dev",
     "build": "cd frontend && npm run build",
     "compile": "cd backend && pint build",
-    "builder": "cd backend && RUST_LOG=trace essential-builder --node-api-bind-address '0.0.0.0: 3553' --builder-api-bind-address '0.0.0.0: 3554'",
+    "chain": "cd backend && RUST_LOG=trace essential-builder --node-api-bind-address '0.0.0.0:3553' --builder-api-bind-address '0.0.0.0:3554'",
     "shell": "cd backend && nix shell github:essential-contributions/essential-integration#essential",
     "generate": "cd frontend && npm run scripts"
   },
-  "author": "",
+  "author": "Bhavya Gor & Kenil Shah",
   "license": "ISC"
 }
