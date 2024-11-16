@@ -3,167 +3,217 @@ use std::lib::@delta;
 use std::lib::@safe_increment;
 use std::lib::@init_once;
 use std::lib::@init_delta;
+use std::lib::@mut_keys;
 use std::auth::@verify_key;
-use std::auth::@check_if_predicate_owns;
 use std::lib::Secp256k1Signature;
 
 storage {
-    token_a_balance: int,                   // Token A balance in the pool
-    token_b_balance: int,                   // Token B balance in the pool
-    total_liquidity: int,                   // Total liquidity shares
-    lp_balances: (b256 => int),             // LP tokens for users
-    fee_rate: int,                          // Fee rate (e.g., 30 for 0.3%)
-    accumulated_fees: int,                  // Accumulated fees for LPs
-    staked_balances: (b256 => int),         // Staked LP tokens for users
-    stake_start_time: (b256 => int),        // Time when staking started
-    rewards_pool: int,                      // Pool of rewards for liquidity providers
-    reward_rate: int,                       // Reward rate for staking
-    nonce: (b256 => int),                   // The nonce for each account
+    // The balances of accounts
+    balances: (b256 => int),
+    // The nonce for each account
+    nonce: (b256 => int),
+    // The name of the token hashed
+    token_name: b256,
+    // The symbol of the token hashed
+    token_symbol: b256,
+    // The decimals of the token
+    decimals: int,
 }
 
-union LiquidityAuth = Signed(Secp256k1Signature) | Predicate(PredicateAddress);
-
-predicate ProvideLiquidity {
-    pub var user: b256;
-    pub var amount_a: int;
-    pub var amount_b: int;
-    var auth: LiquidityAuth;
-
-    state balance_a = mut storage::token_a_balance;
-    state balance_b = mut storage::token_b_balance;
-    state lp_balance = mut storage::lp_balances[user];
-    state total_liquidity = mut storage::total_liquidity;
-
-    // Ensure positive input amounts
-    constraint amount_a > 0;
-    constraint amount_b > 0;
-
-    // Update LP balances and total liquidity without intermediate variables
-    constraint @init_delta(lp_balance; 
-        ((total_liquidity * amount_a) / (balance_a == 0 ? 1 : balance_a) < (total_liquidity * amount_b) / (balance_b == 0 ? 1 : balance_b) ? 
-        (total_liquidity * amount_a) / (balance_a == 0 ? 1 : balance_a) : 
-        (total_liquidity * amount_b) / (balance_b == 0 ? 1 : balance_b))
+interface BurnAccount {
+    predicate Owner(
+        key: b256,
+        amount: int,
+        token_address: PredicateAddress,
     );
+}
 
-    constraint @init_delta(total_liquidity; 
-        ((total_liquidity * amount_a) / (balance_a == 0 ? 1 : balance_a) < (total_liquidity * amount_b) / (balance_b == 0 ? 1 : balance_b) ? 
-        (total_liquidity * amount_a) / (balance_a == 0 ? 1 : balance_a) : 
-        (total_liquidity * amount_b) / (balance_b == 0 ? 1 : balance_b))
+union BurnAuth = Signed(Secp256k1Signature) | Predicate(PredicateAddress);
+
+// key: The address of the account that is burning tokens.
+// amount: The amount being burnt.
+// auth: The authorization for the burn.
+predicate Burn(key: b256, amount: int, auth: BurnAuth) {
+    // Read the balance and nonce from storage.
+    let balance = mut storage::balances[key];
+    let nonce = mut storage::nonce[key];
+
+    // Don't allow empty burns.
+    constraint amount > 0;
+
+    // The change in balance should be the negative of the amount.
+    constraint @delta(balance) == 0 - amount;
+
+    // Make sure the balance after the burn is not negative.
+    constraint balance' >= 0;
+
+    // Increment the nonce.
+    constraint @safe_increment(nonce);
+    
+    // Check the authorization.
+    constraint match auth {
+        BurnAuth::Signed(sig) => @verify_key({key, amount, nonce'}; sig; key),
+        BurnAuth::Predicate(addr) => @check_if_predicate_is_owner(BurnAccount; Owner; addr; key; amount),
+    };
+}
+
+macro @check_if_predicate_is_owner($c, $p, $address, $arg0) {
+    $c@[$address.contract]::$p@[$address.addr]($arg0, { contract: __this_contract_address(), addr: __this_address() })
+}
+
+macro @check_if_predicate_is_owner($c, $p, $address, $arg0, $arg1) {
+    $c@[$address.contract]::$p@[$address.addr]($arg0, $arg1, { contract: __this_contract_address(), addr: __this_address() })
+}
+
+macro @check_if_predicate_is_owner($c, $p, $address, $arg0, $arg1, $arg2) {
+    $c@[$address.contract]::$p@[$address.addr]($arg0, $arg1, $arg2, { contract: __this_contract_address(), addr: __this_address() })
+}
+
+union MintAuth = Signed(Secp256k1Signature) | Predicate(PredicateAddress);
+
+interface MintAccount {
+    predicate Owner(
+        key: b256,
+        amount: int,
+        decimals: int,
+        token_address: PredicateAddress,
     );
+}
 
+// key: The key that is being minted to.
+// Note this is hard coded so that only one entity can mint.
+// amount: The amount being minted.
+// This is also the total supply.
+// decimals: The number of decimals for the token.
+// auth: The authorization for the mint.
+predicate Mint(key: b256, amount: int, decimals: int, auth: MintAuth) {
+    // Read all the let that is being initialized.
+    let balance = mut storage::balances[key];
+    let nonce = mut storage::nonce[key];
+    let token_name = mut storage::token_name;
+    let token_symbol = mut storage::token_symbol;
+    let token_decimals = mut storage::decimals;
 
-    // Update token balances
-    constraint @delta(balance_a) == amount_a;
-    constraint @delta(balance_b) == amount_b;
+    // The only authorized minting address.
+    // Note that changing this also creates a new token.
+    constraint key == config::MINT_KEY;
+    
+    // Initialize all state.
+    // This enforces the pre let must be null 
+    // and the post let must be set to the provided value.
+    constraint @init_once(balance; amount);
+    constraint @init_once(token_name; config::NAME);
+    constraint @init_once(token_symbol; config::SYMBOL);
+    constraint @init_once(token_decimals; decimals);
+    constraint @init_once(nonce; 1);
 
-    // Authorization check
+    // Check the authorization.
     constraint match auth {
-        LiquidityAuth::Signed(sig) => @verify_key({user, amount_a, amount_b}; sig; user),
-        LiquidityAuth::Predicate(addr) => @check_if_predicate_owns(addr; user),
+        MintAuth::Signed(sig) => @verify_key({key, amount, decimals, nonce'}; sig; key),
+        MintAuth::Predicate(addr) => @check_if_predicate_is_owner(MintAccount; Owner; addr; key; decimals; amount),
     };
 }
 
-predicate RemoveLiquidity {
-    pub var user: b256;
-    pub var lp_tokens: int;
-    var auth: LiquidityAuth;
+/// The signature mode for the transfer authorization.
+///
+/// For instance, can use `KeyAmount` to pay the solver, whose address is unknown to the user at sign-time.
+union TransferSignedMode = All | Key | KeyTo | KeyAmount;
 
-    state balance_a = mut storage::token_a_balance;
-    state balance_b = mut storage::token_b_balance;
-    state lp_balance = mut storage::lp_balances[user];
-    state total_liquidity = mut storage::total_liquidity;
-    state accumulated_fees = mut storage::accumulated_fees;
+/// The signed authorization for the transfer.
+type TransferSignedAuth = { sig: Secp256k1Signature, mode: TransferSignedMode };
 
-    // Ensure sufficient LP tokens
-    constraint lp_balance >= lp_tokens;
+/// The authorization mode for the transfer.
+union TransferAuthMode = Signed(TransferSignedAuth) | Predicate(PredicateAddress);
 
-    // Distribute fees proportionally to liquidity providers
-    constraint @delta(accumulated_fees) == 0 - (lp_tokens * accumulated_fees) / total_liquidity;
+/// The extra constraints for the transfer.
+type Extra = { addr: PredicateAddress };
 
-    // Update balances and liquidity
-    constraint @delta(balance_a) == 0 - (lp_tokens * balance_a) / (total_liquidity == 0 ? 1 : total_liquidity) + (lp_tokens * accumulated_fees) / total_liquidity;
-    constraint @delta(balance_b) == 0 - (lp_tokens * balance_b) / (total_liquidity == 0 ? 1 : total_liquidity);
-    constraint @delta(lp_balance) == 0 - lp_tokens;
-    constraint @delta(total_liquidity) == 0 - lp_tokens;
+/// Optional extra constraints for the transfer.
+union ExtraConstraints = Extra(Extra) | None;
 
-    // Authorization check
-    constraint match auth {
-        LiquidityAuth::Signed(sig) => @verify_key({user, lp_tokens}; sig; user),
-        LiquidityAuth::Predicate(addr) => @check_if_predicate_owns(addr; user),
+/// The authorization for the transfer.
+type TransferAuth = { mode: TransferAuthMode, extra: ExtraConstraints };
+
+interface TransferAccount {
+    predicate Owner(
+        key: b256,
+        to: b256,
+        amount: int,
+        token_address: PredicateAddress,
+    );
+}
+
+interface ExtraConstraintsI {
+    predicate Check(
+        token_address: PredicateAddress,
+    );
+}
+
+// key: The address that the amount is being sent from.
+// to: The address that the amount is being sent to.
+// amount: The amount being transfered.
+// auth: The authorization for the transfer.
+predicate Transfer(key: b256, to: b256, amount: int, auth: TransferAuth) {
+    // These are public so that the authorization can check them.
+
+    // Read the balances and nonce from storage.
+    let sender_balance = mut storage::balances[key];
+    let receiver_balance = mut storage::balances[to];
+    let nonce = mut storage::nonce[key];
+
+    // Don't allow empty transfers.
+    constraint amount > 0;
+
+    // Make sure the sender has enough balance.
+    constraint sender_balance' >= 0;
+
+    // The change in the sender balance should be the negative of the amount.
+    constraint @delta(sender_balance) == 0 - amount;
+
+    // The change in the receiver balance should be the positive of the amount.
+    // This also handles the case where the receiver's balance is nil.
+    constraint @init_delta(receiver_balance; amount);
+
+    // Increment the nonce.
+    constraint @safe_increment(nonce);
+    
+    // Check the authorization predicate.
+    constraint match auth.mode {
+        TransferAuthMode::Signed(auth) => match auth.mode {
+            TransferSignedMode::All => @verify_key({key, to, amount, nonce'}; auth.sig; key),
+            TransferSignedMode::Key => @verify_key({key, nonce'}; auth.sig; key),
+            TransferSignedMode::KeyTo => @verify_key({key, to, nonce'}; auth.sig; key),
+            TransferSignedMode::KeyAmount => @verify_key({key, amount, nonce'}; auth.sig; key),
+        },
+        TransferAuthMode::Predicate(addr) => @check_if_predicate_is_owner(TransferAccount; Owner; addr; key; to; amount),
+    };
+    constraint match auth.extra {
+        ExtraConstraints::Extra(extra) => ExtraConstraintsI@[extra.addr.contract]::Check@[extra.addr.addr]({ contract: __this_contract_address(), addr: __this_address() }),
+        ExtraConstraints::None => true,
     };
 }
 
-predicate SwapTokens {
-    pub var user: b256;
-    pub var from_token: int;        // 1 for Token A, 2 for Token B
-    pub var amount_in: int;
-    var auth: LiquidityAuth;
+interface CancelAccount {
+    predicate Owner(
+        key: b256,
+        token_address: PredicateAddress,
+    );
+}
 
-    state balance_a = mut storage::token_a_balance;
-    state balance_b = mut storage::token_b_balance;
-    state fee_rate = storage::fee_rate;
-    state accumulated_fees = mut storage::accumulated_fees;
+union CancelAuth = Signed(Secp256k1Signature) | Predicate(PredicateAddress);
 
-    // Declare variables at the top
-    //var amount_out: int;
+// key: The address that the transfer or burn is being cancelled for.
+// auth: The authorization for the cancel.
+predicate Cancel(key: b256, auth: CancelAuth) {
+    let nonce = mut storage::nonce[key];
 
-    constraint amount_in > 0;
+    // Increment the nonce so that any pending transfers or 
+    // burns are invalidated.
+    constraint @safe_increment(nonce);
 
-    if (from_token == 1) {
-        // Define relationships via constraints
-        constraint balance_a' == balance_a + amount_in;
-        //constraint amount_out == (balance_b * amount_in * (1000 - fee_rate)) / (balance_a' * 1000);
-
-        constraint @delta(balance_a) == amount_in;
-        //constraint @delta(balance_b) == 0 - amount_out;
-        // Add fees to accumulated fees
-        constraint @delta(accumulated_fees) == (amount_in * fee_rate) / 1000;
-    } else if (from_token == 2) {
-        constraint balance_b' == balance_b + amount_in;
-        //constraint amount_out == (balance_a * amount_in * (1000 - fee_rate)) / (balance_b' * 1000);
-
-        constraint @delta(balance_b) == amount_in;
-        //constraint @delta(balance_a) == 0 - amount_out;
-        // Add fees to accumulated fees
-        constraint @delta(accumulated_fees) == (amount_in * fee_rate) / 1000;
-    }
-
-    // Authorization check
+    // Check the authorization.
     constraint match auth {
-        LiquidityAuth::Signed(sig) => @verify_key({user, from_token, amount_in}; sig; user),
-        LiquidityAuth::Predicate(addr) => @check_if_predicate_owns(addr; user),
+        CancelAuth::Signed(sig) => @verify_key({key, nonce'}; sig; key),
+        CancelAuth::Predicate(addr) => @check_if_predicate_is_owner(CancelAccount; Owner; addr; key),
     };
-}
-
-predicate StakeLiquidity {
-    pub var user: b256;
-    pub var amount: int;
-    pub var current_time: int;  // Input the current block timestamp
-
-    state staked_balance = mut storage::staked_balances[user];
-    state stake_time = mut storage::stake_start_time[user];
-
-    // Add staking logic
-    constraint @delta(staked_balance) == amount;
-    constraint @init_once(stake_time; current_time);
-}
-
-predicate ClaimRewards {
-    pub var user: b256;
-    pub var current_time: int;  // Input the current block timestamp
-
-    state staked_balance = mut storage::staked_balances[user];
-    state stake_time = mut storage::stake_start_time[user];
-    state rewards_pool = mut storage::rewards_pool;
-    state balance_a = mut storage::token_a_balance;
-    state reward_rate = storage::reward_rate;
-
-    var staking_duration = current_time - stake_time;
-    var reward = (staked_balance * staking_duration * reward_rate);
-
-    // Ensure rewards are distributed
-    constraint @delta(rewards_pool) == 0 - reward;
-
-    // Add reward to the user's token balances
-    constraint @delta(balance_a) == reward;
 }

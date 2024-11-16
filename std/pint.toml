@@ -1,9 +1,9 @@
 [package]
-name = "token"
-kind = "contract"
+name = "std"
+kind = "library"
 
 [dependencies]
-std = { path = "../../../std" }
+# Library dependencies go here.
 
 [contract-dependencies]
 # Contract dependencies go here.
