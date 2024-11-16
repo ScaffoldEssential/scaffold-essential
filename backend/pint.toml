@@ -3,7 +3,7 @@ name = "token"
 kind = "contract"
 
 [dependencies]
-std = { path = "../../../std" }
+std = { path = "../std" }
 
 [contract-dependencies]
 # Contract dependencies go here.
