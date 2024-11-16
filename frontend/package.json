@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "scripts": "node ./scripts/createSolution.ts"
+    "scripts": "node ./scripts/createSolution.js"
   },
   "type": "module",
   "dependencies": {

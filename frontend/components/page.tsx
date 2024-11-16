@@ -37,6 +37,7 @@ export function BlockPage() {
             icon={<PlayIcon className="w-6 h-6" />}
             title="Playground"
             description="Explore the playground and learn more about the stack"
+            onClick={() => push("/playground")}
           />
         </div>
 
