@@ -12,12 +12,12 @@ export function NavbarComponent() {
   const navItems = [
     {
       name: "GitHub",
-      href: "https://github.com/your-repo/scaffold-essential",
+      href: "https://github.com/ScaffoldEssential/ScaffoldPint",
       icon: <Github className="h-4 w-4" />,
     },
     {
       name: "Docs",
-      href: "https://your-docs-url.com",
+      href: "https://pints-organization.gitbook.io/ts-docs.essential.builder/getting-started/quickstart",
       icon: <Book className="h-4 w-4" />,
     },
   ];
