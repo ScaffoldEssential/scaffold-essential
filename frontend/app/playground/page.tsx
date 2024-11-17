@@ -1,6 +1,6 @@
 "use client";
 
-import { DigitalPlaygroundComponent } from "@/components/digital-playground";
+import DigitalPlaygroundComponent from "@/components/digital-playground";
 import type { NextPage } from "next";
 
 const Playground: NextPage = () => {

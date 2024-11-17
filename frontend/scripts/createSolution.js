@@ -3,11 +3,6 @@ import inquirer from "inquirer";
 import chalk from "chalk";
 import fs from "fs";
 
-// Helper function to convert array of numbers to array of strings (Words)
-const convertToWords = (arr) =>
-  arr.map((num) => num.toString(16).padStart(64, "0"));
-
-// Function to ask for user input for contract address, predicate, and state mutations
 async function run() {
   console.log(chalk.blue("Welcome to the Contract Solution Generator! 🚀"));
 
@@ -71,8 +66,8 @@ async function run() {
   // Generate state mutations
   const stateMutations = [
     {
-      key: convertToWords([parseInt(mutationKey)]),
-      value: convertToWords([parseInt(mutationValue)]),
+      key: [parseInt(mutationKey)],
+      value: [parseInt(mutationValue)],
     },
   ];
 

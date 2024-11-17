@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -12,8 +12,41 @@ import {
 } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
+import usePint from "@/hooks/use-pint";
 
-export function DigitalPlaygroundComponent() {
+function createHttp2Curl(
+  url: string,
+  method = "POST",
+  headers = {},
+  body = "",
+) {
+  const headersString = Object.entries(headers)
+    .map(([key, value]) => `-H "${key}: ${value}"`)
+    .join(" ");
+
+  return `curl --http2 -X ${method} ${headersString} -d '${JSON.stringify(body)}' ${url}`;
+}
+const solutionJson = {
+  data: [
+    {
+      predicate_to_solve: {
+        contract:
+          "1899743AA94972DDD137D039C2E670ADA63969ABF93191FA1A4506304D4033A2",
+        predicate:
+          "355A12DCB600C302FFD5D69C4B7B79E60BA3C72DDA553B7D43F4C36CB7CC0948",
+      },
+      decision_variables: [],
+      state_mutations: [
+        {
+          key: [1],
+          value: [2],
+        },
+      ],
+    },
+  ],
+};
+const URL = "http://localhost:3554/submit-solution";
+export default function DigitalPlaygroundComponent() {
   const { toast } = useToast();
   const [contractAddress, setContractAddress] = useState("");
   const [functionAddress, setFunctionAddress] = useState("");
@@ -21,6 +54,18 @@ export function DigitalPlaygroundComponent() {
   const [stateMutations, setStateMutations] = useState([
     { key: "", value: "" },
   ]);
+  const [curlCommand, setCurlCommand] = useState("");
+
+  const { submitSolution } = usePint({
+    url: URL,
+    solutionJson,
+  });
+
+  useEffect(() => {
+    const headers = { "Content-Type": "application/json" };
+    // @ts-expect-error solutionJson is an object
+    setCurlCommand(createHttp2Curl(URL, "POST", headers, solutionJson));
+  }, []);
 
   const handleAddDecisionVariable = () => {
     setDecisionVariables([...decisionVariables, ""]);
@@ -34,36 +79,13 @@ export function DigitalPlaygroundComponent() {
     if (!contractAddress || !functionAddress) {
       toast({
         title: "Missing Fields",
-        description: "Please enter contract and function",
+        description: "Please enter contract and function addresses.",
       });
       return;
     }
 
     try {
-      const solution = {
-        data: [
-          {
-            predicate_to_solve: {
-              contract: contractAddress,
-              predicate: functionAddress,
-            },
-            decision_variables: decisionVariables.filter((val) => val !== ""),
-            state_mutations: stateMutations
-              .filter(
-                (mutation) => mutation.key !== "" && mutation.value !== "",
-              )
-              .map((mutation) => ({
-                key: [`${mutation.key.padStart(16, "0")}`],
-                value: [`${mutation.value.padStart(16, "0")}`],
-              })),
-          },
-        ],
-      };
-
-      console.log("Generated Solution:", solution);
-
-      // Mock API call or save operation
-      await new Promise((resolve) => setTimeout(resolve, 1000)); // Simulate async operation
+      await submitSolution();
       toast({
         title: "Function Invoked",
         description: "Successfully invoked function.",
@@ -84,6 +106,7 @@ export function DigitalPlaygroundComponent() {
       <Tabs defaultValue="write" className="space-y-4">
         <TabsList>
           <TabsTrigger value="write">Write</TabsTrigger>
+          <TabsTrigger value="terminal">Terminal</TabsTrigger>
         </TabsList>
 
         <TabsContent value="write">
@@ -202,6 +225,62 @@ export function DigitalPlaygroundComponent() {
                   Invoke Function
                 </Button>
               </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="terminal">
+          <Card>
+            <CardHeader>
+              <CardTitle>Curl Command</CardTitle>
+              <CardDescription>
+                Copy and paste this curl command to make the request manually.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <pre className="bg-gray-100 p-4 rounded-md overflow-x-auto">
+                <code>{curlCommand}</code>
+              </pre>
+              <Button
+                className="mt-4"
+                onClick={() => {
+                  navigator.clipboard.writeText(curlCommand);
+                  toast({
+                    title: "Copied to Clipboard",
+                    description:
+                      "The curl command has been copied to your clipboard.",
+                  });
+                }}
+              >
+                Copy to Clipboard
+              </Button>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Resolve and Build</CardTitle>
+              <CardDescription>Pint Submit Method</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <pre className="bg-gray-100 p-4 rounded-md overflow-x-auto">
+                <code>
+                  pint submit --builder-address $curl --solution
+                  $locationToSolution
+                </code>
+              </pre>
+              <Button
+                className="mt-4"
+                onClick={() => {
+                  navigator.clipboard.writeText(curlCommand);
+                  toast({
+                    title: "Copied to Clipboard",
+                    description:
+                      "The pint submit command has been copied to your clipboard.",
+                  });
+                }}
+              >
+                Copy to Clipboard
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>

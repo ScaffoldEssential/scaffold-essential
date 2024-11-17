@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
-import { NavbarComponent } from "@/components/navbar";
-import { Toaster } from "@/components/ui/toaster";
+import { ScaffoldEssentialAppWithProviders } from "@/components/ScaffoldEssentialAppWithProviders";
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff",
   variable: "--font-geist-sans",
@@ -29,9 +28,9 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <NavbarComponent />
-        {children}
-        <Toaster />
+        <ScaffoldEssentialAppWithProviders>
+          {children}
+        </ScaffoldEssentialAppWithProviders>
       </body>
     </html>
   );
